@@ -1,11 +1,12 @@
 #! /bin/bash
 
+
 now_status () {
   UNTRACKED_NUM=`git status -s | grep "^??" | wc -l | sed 's/ //g'`
-  CHANGED_NUM=`git status -s | grep "^ M" | wc -l | sed 's/ //g'`
+  CHANGED_NUM=`git status -s | grep -E "^ M|^MM" | wc -l | sed 's/ //g'`
   DELETED_NUM=`git status -s | grep "^ D" | wc -l | sed 's/ //g'`
   NEWSTAGED_NUM=`git status -s | grep "^A " | wc -l | sed 's/ //g'`
-  MODSTAGED_NUM=`git status -s | grep "^M " | wc -l | sed 's/ //g'`
+  MODSTAGED_NUM=`git status -s | grep -E "^M |^MM" | wc -l | sed 's/ //g'`
   DELSTAGED_NUM=`git status -s | grep "^D " | wc -l | sed 's/ //g'`
   echo "----- ローカル -----"
   echo "新[${UNTRACKED_NUM}] 変[${CHANGED_NUM}] 削[${DELETED_NUM}]"
@@ -24,10 +25,10 @@ checkout () {
       branches=$(git branch -vv)
       branch=$(echo "${branches}" | fzf +m)
       if [ -z "${branch}" ]; then
-        read -p "キャンセルしました。" DAMMY
+        read -n 1 -p "キャンセルしました。" DAMMY
       else
           git checkout $(echo "${branch}" | awk '{print $1}' | sed "s/.* //")
-          read -p "なにかキーを押してください: " DAMMY
+          press_any_key
       fi
     ;;
     [2])
@@ -35,10 +36,10 @@ checkout () {
       read -p ":" INPUT_STR
       # git branch ${INPUT_STR}
       if [ -z "${INPUT_STR}" ]; then
-        read -p "キャンセルしました。" DAMMY
+        read -n 1 -p "キャンセルしました。" DAMMY
       else
         git checkout -b ${INPUT_STR}
-        read -p "[${INPUT_STR}]ブランチを作成しました。" DAMMY
+        read -n 1 -p "[${INPUT_STR}]ブランチを作成しました。" DAMMY
       fi
       ;;
   esac
@@ -61,25 +62,41 @@ gitlog () {
   esac
 }
 
-make_branch () {
-  echo "作成したいGit名を入力"
-  read -p ":" INPUT_STR
-  # git branch ${INPUT_STR}
-  if [ -z "${INPUT_STR}" ]; then
-    read -p "キャンセルしました。" DAMMY
-  else
-    git checkout -b ${INPUT_STR}
-    read -p "[${INPUT_STR}]ブランチを作成しました。" DAMMY
-  fi
-}
 
 commit () {
-  read -p "コミットします。Viが開くので、コメントメッセージを入れて保存してください。" DAMMY
+  read -n 1 -p "コミットします。Viが開くので、コメントメッセージを入れて保存してください。" DAMMY
   git commit
 }
+# commit_old () {
+#   echo "[1] git commit -m １行でコミットを作成"
+#   echo "[2] git commit Viを使ってコミットを作成"
+#
+#   read -n 1 -p "info? > " command
+#   echo
+#   case "${command}" in    #変数strの内容で分岐
+#     [1])
+#       echo "コミットメッセージを入れてください（何も入れないとキャンセルします）"
+#       read -p ":" INPUT_STR
+#       if [ -z "${INPUT_STR}" ]; then
+#         IS_CANCEL=true
+#         read -n 1 -p "キャンセルしました。" DAMMY
+#       else
+#         git commit -m '${INPUT_STR}'
+#         read -n 1 -p "コミットしました" DAMMY
+#       fi
+#       ;;
+#     [2])
+#       read -n 1 -p "コミットします。Viが開くので、コメントメッセージを入れて保存してください。" DAMMY
+#       git commit
+#       ;;
+#     *) echo "キャンセルしました";IS_CANCEL=true;;
+#   esac
+#
+# }
+
 
 press_any_key () {
-  read -p "なにかキーを押してください: " DAMMY
+  read -n 1 -p "なにかキーを押してください: " DAMMY
 }
 
 super_diff () {
@@ -95,6 +112,7 @@ gitadd () {
   case "${command}" in    #変数strの内容で分岐
     [1]) git add . && echo "すべてステージングにあげました。" &&  press_any_key ;;
     [2]) git add -i ;;
+    *) echo "キャンセルしました";IS_CANCEL=true;;
   esac
 
 }
@@ -114,20 +132,23 @@ add_commit_push () {
   echo "--------------------"
   echo "add -> commit -> pushウィザードです"
   now_status
-  read -p "addします。" DAMMY
+  read -n 1 -p "addします。" DAMMY
   gitadd
+  if [ "${IS_CANCEL}" = true ]; then return; fi
   now_status
-  read -p "commitします。" DAMMY
+  read -n 1 -p "commitします。" DAMMY
   commit
+  if [ "${IS_CANCEL}" = true ]; then return; fi
   now_status
-  read -p "pushします。" DAMMY
-  git push origin ${BRANCH_NAME} && read -p "プッシュしました。" DAMMY
+  read -n 1 -p "pushします。" DAMMY
+  git push origin ${BRANCH_NAME} && read -n 1 -p "プッシュしました。" DAMMY
 }
 
 # Main
 echo "なに？"
 while true
 do
+  IS_CANCEL=false
   BRANCH_NAME=`git rev-parse --abbrev-ref HEAD | sed 's/ //g'`
   P_BRANCH_NAME="origin/${BRANCH_NAME}"
   BRANCHES=`git branch -a`
@@ -171,8 +192,8 @@ do
     [3]) git diff;;
     [4]) gitadd;;
     [5]) commit;;
-    [6]) git push origin ${BRANCH_NAME} && read -p "プッシュしました。" DAMMY;;
-    [7]) git pull origin ${BRANCH_NAME} && read -p "プルしました。" DAMMY;;
+    [6]) git push origin ${BRANCH_NAME} && read -n 1 -p "プッシュしました。" DAMMY;;
+    [7]) git pull origin ${BRANCH_NAME} && read -n 1 -p "プルしました。" DAMMY;;
     [8]) add_commit_push;;
     [Qq]) echo "QUIT" && exit;;
     *)    echo "なに？";;
