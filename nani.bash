@@ -1,14 +1,134 @@
 #! /bin/bash
-echo "なに？"
-while true
-do
-  BRANCH_NAME=`git rev-parse --abbrev-ref HEAD | sed 's/ //g'`
+
+now_status () {
   UNTRACKED_NUM=`git status -s | grep "^??" | wc -l | sed 's/ //g'`
   CHANGED_NUM=`git status -s | grep "^ M" | wc -l | sed 's/ //g'`
   DELETED_NUM=`git status -s | grep "^ D" | wc -l | sed 's/ //g'`
   NEWSTAGED_NUM=`git status -s | grep "^A " | wc -l | sed 's/ //g'`
   MODSTAGED_NUM=`git status -s | grep "^M " | wc -l | sed 's/ //g'`
   DELSTAGED_NUM=`git status -s | grep "^D " | wc -l | sed 's/ //g'`
+  echo "----- ローカル -----"
+  echo "新[${UNTRACKED_NUM}] 変[${CHANGED_NUM}] 削[${DELETED_NUM}]"
+  echo "----- ステージ -----"
+  echo "新[${NEWSTAGED_NUM}] 変[${MODSTAGED_NUM}] 削[${DELSTAGED_NUM}]"
+  echo "--------------------"
+}
+
+checkout () {
+  echo "[1] git checkout ブランチ移動"
+  echo "[2] git checkout -b ブランチ作成"
+  read -n 1 -p "checkout? > " command
+  echo
+  case "${command}" in    #変数strの内容で分岐
+    [1])
+      branches=$(git branch -vv)
+      branch=$(echo "${branches}" | fzf +m)
+      if [ -z "${branch}" ]; then
+        read -p "キャンセルしました。" DAMMY
+      else
+          git checkout $(echo "${branch}" | awk '{print $1}' | sed "s/.* //")
+          read -p "なにかキーを押してください: " DAMMY
+      fi
+    ;;
+    [2])
+      echo "作成したいGit名を入力(何も入れないとキャンセル)"
+      read -p ":" INPUT_STR
+      # git branch ${INPUT_STR}
+      if [ -z "${INPUT_STR}" ]; then
+        read -p "キャンセルしました。" DAMMY
+      else
+        git checkout -b ${INPUT_STR}
+        read -p "[${INPUT_STR}]ブランチを作成しました。" DAMMY
+      fi
+      ;;
+  esac
+}
+
+
+gitlog () {
+  echo "[1] git log ログをそのまま表示"
+  echo "[2] git branch ブランチを一覧表示"
+  echo "[3] *fshow 履歴をツリー表示する"
+  echo "[4] *super_diff ファイルの履歴を深堀りする"
+
+  read -n 1 -p "info? > " command
+  echo
+  case "${command}" in    #変数strの内容で分岐
+    [1]) git log ;;
+    [2]) git branch ;;
+    [3]) fshow ;;
+    [4]) super_diff ;;
+  esac
+}
+
+make_branch () {
+  echo "作成したいGit名を入力"
+  read -p ":" INPUT_STR
+  # git branch ${INPUT_STR}
+  if [ -z "${INPUT_STR}" ]; then
+    read -p "キャンセルしました。" DAMMY
+  else
+    git checkout -b ${INPUT_STR}
+    read -p "[${INPUT_STR}]ブランチを作成しました。" DAMMY
+  fi
+}
+
+commit () {
+  read -p "コミットします。Viが開くので、コメントメッセージを入れて保存してください。" DAMMY
+  git commit
+}
+
+press_any_key () {
+  read -p "なにかキーを押してください: " DAMMY
+}
+
+super_diff () {
+  dir=`find . -type d -name '.git' -prune -o -type f -print | fzf`
+  git log -p ${dir}
+}
+gitadd () {
+  echo "[1] git add . すべてステージングエリアにあげる"
+  echo "[2] git add -i 選択してステージングにあげる"
+
+  read -n 1 -p "git add? > " command
+  echo
+  case "${command}" in    #変数strの内容で分岐
+    [1]) git add . && echo "すべてステージングにあげました。" &&  press_any_key ;;
+    [2]) git add -i ;;
+  esac
+
+}
+fshow () {
+  git log --graph --color=always \
+  --format="%C(auto)%h%d %s %C(black)%C(bold)%cr" "$@" |
+fzf --ansi --no-sort --reverse --tiebreak=index --bind=ctrl-s:toggle-sort \
+  --bind "ctrl-m:execute:
+  (grep -o '[a-f0-9]\{7\}' | head -1 |
+  xargs -I % sh -c 'git show --color=always % | less -R') << 'FZF-EOF'
+  {}q
+  FZF-EOF"
+
+}
+
+add_commit_push () {
+  echo "--------------------"
+  echo "add -> commit -> pushウィザードです"
+  now_status
+  read -p "addします。" DAMMY
+  gitadd
+  now_status
+  read -p "commitします。" DAMMY
+  commit
+  now_status
+  read -p "pushします。" DAMMY
+  git push origin ${BRANCH_NAME} && read -p "プッシュしました。" DAMMY
+}
+
+# Main
+echo "なに？"
+while true
+do
+  BRANCH_NAME=`git rev-parse --abbrev-ref HEAD | sed 's/ //g'`
   P_BRANCH_NAME="origin/${BRANCH_NAME}"
   BRANCHES=`git branch -a`
   echo "現在のブランチ:[${BRANCH_NAME}]"
@@ -31,99 +151,30 @@ do
     echo "親ブランチは存在しません"
   fi
 
-  echo "----- ローカル -----"
-  echo "新[${UNTRACKED_NUM}] 変[${CHANGED_NUM}] 削[${DELETED_NUM}]"
-  echo "----- ステージ -----"
-  echo "新[${NEWSTAGED_NUM}] 変[${MODSTAGED_NUM}] 削[${DELSTAGED_NUM}]"
-  echo "--------------------"
-  echo "[0] git checkout チェックアウト"
-  echo "[1] git log Gitのログを表示"
+  now_status
+  echo "[0] git checkout ブランチ移動・作成"
+  echo "[1] info ログ表示・調査"
   echo "[2] git status 作業ツリー内の差分ファイルを表示"
-  echo "[3] git branch[list] ブランチを一覧表示"
-  echo "[4] git checkout -b ブランチを新規作成してブランチに移動"
-  echo "[5] git diff 何処を編集したのか確認"
-  echo "[6] git add . すべてステージングエリアにあげる"
-  echo "[7] git add -i 選択してステージングにあげる"
-  echo "[8] git commit コミットする"
-  echo "[9] git push origin ${BRANCH_NAME} プッシュする"
-  echo "[s] *fshow 履歴をツリー表示する"
-  echo "[d] *superdiff ファイルの履歴を深堀りする"
+  echo "[3] git diff 何処を編集したのか確認"
+  echo "[4] git add ステージングエリアにあげる"
+  echo "[5] git commit コミットする"
+  echo "[6] git push origin ${BRANCH_NAME} プッシュする"
+  echo "[7] git pull origin ${BRANCH_NAME} プルする"
+  echo "[8] add -> commit -> pushウィザード"
   echo "[q] exit"
-  read -n 1 -p "コマンド? > " str  #標準入力（キーボード）から1文字け取って変数strにセット
+  read -n 1 -p "コマンド? > " command
   echo
-  case "$str" in    #変数strの内容で分岐
-    [0])
-      branches=$(git branch -vv)
-      branch=$(echo "${branches}" | fzf +m)
-      if [ -z "${branch}" ]; then
-        read -p "キャンセルしました。" DAMMY
-      else
-          git checkout $(echo "${branch}" | awk '{print $1}' | sed "s/.* //")
-          read -p "なにかキーを押してください: " DAMMY
-
-      fi
-      ;;
-    [1])
-      git log
-      ;;
-    [2])
-      git status
-      read -p "なにかキーを押してください: " DAMMY
-      ;;
-    [3])
-      # git branch -a
-      git branch
-      ;;
-    [4])
-      echo "作成したいGit名を入力"
-      read -p ":" INPUT_STR
-      # git branch ${INPUT_STR}
-      if [ -z "${INPUT_STR}" ]; then
-        read -p "キャンセルしました。" DAMMY
-      else
-        git checkout -b ${INPUT_STR}
-        read -p "[${INPUT_STR}]ブランチを作成しました。" DAMMY
-      fi
-      ;;
-    [5])
-      git diff
-      ;;
-    [6])
-      git add .
-      echo "すべてステージングにあげました。"
-      read -p "なにかキーを押してください: " DAMMY
-      ;;
-    [7])
-      git add -i
-      ;;
-    [8])
-      read -p "コミットします。Viが開くので、コメントメッセージを入れて保存してください。" DAMMY
-      git commit
-      ;;
-    [9])
-      git push origin ${BRANCH_NAME}
-      read -p "プッシュしました。" DAMMY
-      ;;
-    [Qq])
-      echo "QUIT"
-      exit
-      ;;
-    [Dd])
-      dir=`find . -type d -name '.git' -prune -o -type f -print | fzf`
-      git log -p ${dir}
-      ;;
-    [Ss])
-      git log --graph --color=always \
-      --format="%C(auto)%h%d %s %C(black)%C(bold)%cr" "$@" |
-  fzf --ansi --no-sort --reverse --tiebreak=index --bind=ctrl-s:toggle-sort \
-      --bind "ctrl-m:execute:
-      (grep -o '[a-f0-9]\{7\}' | head -1 |
-      xargs -I % sh -c 'git show --color=always % | less -R') << 'FZF-EOF'
-      {}
-      FZF-EOF"
-      ;;
-
-    *)
-      echo "なに？";;
+  case "${command}" in    #変数strの内容で分岐
+    [0]) checkout;;
+    [1]) gitlog ;;
+    [2]) git status && press_any_key ;;
+    [3]) git diff;;
+    [4]) gitadd;;
+    [5]) commit;;
+    [6]) git push origin ${BRANCH_NAME} && read -p "プッシュしました。" DAMMY;;
+    [7]) git pull origin ${BRANCH_NAME} && read -p "プルしました。" DAMMY;;
+    [8]) add_commit_push;;
+    [Qq]) echo "QUIT" && exit;;
+    *)    echo "なに？";;
   esac
 done
